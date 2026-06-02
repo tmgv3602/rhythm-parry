@@ -1,9 +1,9 @@
 # rhythm_parry.py
 # 1ボタン音ゲー: 作曲済みの旋律を「タイミングを当てて演奏する」パリィゲー。
 # ファミコン2A03構成 — パルス=リード(プレイヤー) / 三角波=ベース / ノイズ=ドラム。
-# ミスするとその音が鳴らない = 旋律に穴が空く = 自分が演奏している実感。
+# ミスしても止まらない: 30秒走り切るノーフェイル。ミスは旋律に穴が空くだけ。
 #
-# 操作: タップ / SPACE / Z / X = パリィ   画面端の +/- = 判定窓   タップ/R = リトライ
+# 操作: タップ / SPACE / Z / X = パリィ   タップ/R = リトライ
 # 実行: pip install pyxel && python rhythm_parry.py
 #  (スマホ: ブラウザ版を docs/index.html → GitHub Pages で配信、画面タップで操作)
 
@@ -19,8 +19,6 @@ SPAWN_X       = 28
 ACTIVE_FRAMES = 7     # 判定窓(±これフレーム以内でパリィ成立)
 PERFECT_LATE  = 2     # ±これフレーム以内でPERFECT
 COOLDOWN      = 8
-MAX_HP        = 3
-
 # ---- タイムアタック ----
 TIME_LIMIT_SEC = 30
 TIME_LIMIT     = TIME_LIMIT_SEC * 60
@@ -101,8 +99,7 @@ class Game:
     def __init__(self):
         pyxel.init(W, H, title="RHYTHM PARRY", fps=60)
         self._sounds()
-        self.active_frames = ACTIVE_FRAMES
-        self.window_flash = 0
+        self.active_frames = ACTIVE_FRAMES   # 固定(7F)。プレイ中の調整UIは廃止
         self.reset()
         pyxel.run(self.update, self.draw)
 
@@ -118,7 +115,6 @@ class Game:
         pyxel.sounds[8].set("c4e4g4",   "s", "5",  "f",  2)   # PERFECT装飾(高音きらめき)
 
     def reset(self):
-        self.hp = MAX_HP
         self.combo = 0
         self.best_combo = 0
         self.score = 0
@@ -132,7 +128,6 @@ class Game:
         self.sparks = []
         self.shake = 0
         self.flash = 0
-        self.hurt = 0
         self.miss_flash = 0
         self.result_text = ""
         self.result_col = 7
@@ -143,14 +138,13 @@ class Game:
         self.time_left = TIME_LIMIT
         self.end_reason = ""
 
-    # ---------- 入力・調整 ----------
-    def _read_parry(self, block_tap=False):
-        tap = pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and not block_tap
+    # ---------- 入力 ----------
+    def _read_parry(self):
         pressed = (pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_Z)
                    or pyxel.btnp(pyxel.KEY_X)
                    or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A)
                    or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B)
-                   or tap)
+                   or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT))   # 画面どこでもタップ=パリィ
         if not pressed or self.blade_cd > 0:
             return
         self.blade_cd = COOLDOWN
@@ -165,29 +159,6 @@ class Game:
             self._do_parry(s, diff <= PERFECT_LATE)
         else:
             self.blade_col = 6
-
-    def _adjust_window(self):
-        # キーボード/方向キー
-        inc = (pyxel.btnp(pyxel.KEY_RIGHT, hold=14, repeat=4)
-               or pyxel.btnp(pyxel.KEY_UP, hold=14, repeat=4))
-        dec = (pyxel.btnp(pyxel.KEY_LEFT, hold=14, repeat=4)
-               or pyxel.btnp(pyxel.KEY_DOWN, hold=14, repeat=4))
-        # 画面下のボタンバンド端の +/- へのタップ(スマホ用)
-        tap_btn = False
-        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and pyxel.mouse_y >= H - 24:
-            if pyxel.mouse_x < 24:
-                dec = True
-                tap_btn = True
-            elif pyxel.mouse_x > W - 24:
-                inc = True
-                tap_btn = True
-        if inc:
-            self.active_frames = min(20, self.active_frames + 1)
-            self.window_flash = 12
-        if dec:
-            self.active_frames = max(2, self.active_frames - 1)
-            self.window_flash = 12
-        return tap_btn                       # True ならそのタップはパリィにしない
 
     # ---------- ビート進行(伴奏) ----------
     def _on_step(self, step):
@@ -246,39 +217,30 @@ class Game:
         if perfect:
             pyxel.play(0, 8)                         # 上に高音のきらめきを重ねる
 
-    def _do_hit(self, s):
+    def _do_miss(self, s):
+        # 見逃し: ゲームオーバーにせず、コンボが切れるだけ(発散向けに罰を軽く)
         s.resolved = True
         if s in self.slashes:
             self.slashes.remove(s)
         self.combo = 0
-        self.hp -= 1
-        self.shake = 10
-        self.hurt = 8
-        self.miss_flash = 16
+        self.shake = 3            # 軽い揺れのみ(痛みではなく空振り程度)
+        self.miss_flash = 14
         pyxel.play(0, 3)
-        if self.hp <= 0:
-            self.over = True
-            self.end_reason = "DEFEATED"
-            pyxel.play(0, 5)
 
     # ---------------- UPDATE ----------------
     def update(self):
         if self.flash > 0:        self.flash -= 1
         if self.shake > 0:        self.shake -= 1
-        if self.hurt > 0:         self.hurt -= 1
         if self.miss_flash > 0:   self.miss_flash -= 1
         if self.result_timer > 0: self.result_timer -= 1
         if self.enemy_lunge > 0:  self.enemy_lunge -= 1
         if self.enemy_recoil > 0: self.enemy_recoil -= 1
         if self.blade_flash > 0:  self.blade_flash -= 1
         if self.beat_pulse > 0:   self.beat_pulse -= 1
-        if self.window_flash > 0: self.window_flash -= 1
         for sp in self.sparks[:]:
             sp.update()
             if sp.life <= 0:
                 self.sparks.remove(sp)
-
-        tap_on_button = self._adjust_window()
 
         if self.over:
             if (pyxel.btnp(pyxel.KEY_R) or pyxel.btnp(pyxel.KEY_SPACE)
@@ -303,14 +265,14 @@ class Game:
 
         if self.blade_cd > 0:
             self.blade_cd -= 1
-        self._read_parry(block_tap=tap_on_button)
+        self._read_parry()
 
         for s in self.slashes[:]:
             if s.resolved:
                 self.slashes.remove(s)
                 continue
             if self.beat_frame - s.hit_frame > self.active_frames:
-                self._do_hit(s)
+                self._do_miss(s)
 
     # ---------------- DRAW ----------------
     def draw(self):
@@ -321,13 +283,13 @@ class Game:
         pyxel.cls(0)
         pyxel.rect(0, H // 2 + 16, W, H, 1)
 
+        # コンボ演出: 回転集中線をやめ、静的な枠に(回転・ちらつきなし=目に優しい)
         if self.combo >= 3:
-            n = min(self.combo, 12)
-            for i in range(n):
-                a = (i / n) * math.tau + pyxel.frame_count * 0.05
-                pyxel.line(W // 2, H // 2,
-                           W // 2 + math.cos(a) * 90,
-                           H // 2 + math.sin(a) * 90, 5)
+            tier = min((self.combo - 3) // 3, 2)   # 0,1,2 の3段階
+            col = [5, 13, 12][tier]                # 暗い灰 → 藍 → 青(穏やかに明るく)
+            pyxel.rectb(0, 0, W, H, col)
+            if tier >= 2:
+                pyxel.rectb(2, 2, W - 4, H - 4, 5)  # 厚みだけ足す(静的)
 
         pcol = 7 if self.beat_pulse > 4 else 5
         for y in range(0, H, 5):
@@ -350,9 +312,6 @@ class Game:
             pyxel.rect(0, 0, W, H, 7)
 
         pyxel.camera()
-        if self.hurt > 0:
-            pyxel.rectb(0, 0, W, H, 8)
-
         self._draw_hud()
         if self.over:
             self._draw_over()
@@ -394,12 +353,6 @@ class Game:
             dc = 10 if self.beat_pulse > 4 else 5
             pyxel.circ(W // 2 + 12, 6, 2, dc)
 
-        for i in range(MAX_HP):
-            c = 8 if i < self.hp else 5
-            hx = 4 + i * 9
-            pyxel.tri(hx, 7, hx + 3, 4, hx + 6, 7, c)
-            pyxel.tri(hx, 7, hx + 3, 11, hx + 6, 7, c)
-
         sc = str(self.score)
         pyxel.text(W - 4 - len(sc) * 4, 4, sc, 7)
 
@@ -426,21 +379,8 @@ class Game:
             self._draw_parry_button()
 
     def _draw_parry_button(self):
-        by, bh = 104, 20
-
-        # 判定窓の表示(ボタンの上)
-        wt = f"WINDOW {self.active_frames}F"
-        wc = 10 if self.window_flash > 0 else 5
-        pyxel.text(W // 2 - len(wt) * 2, 97, wt, wc)
-
-        # 端の - / + ボタン
-        for label, x in (("-", 4), ("+", W - 22)):
-            pyxel.rect(x, by, 18, bh, 1)
-            pyxel.rectb(x, by, 18, bh, 5)
-            pyxel.text(x + 7, by + 7, label, 7)
-
-        # 中央: PARRY ボタン — タップで光り、ビートで脈打つ
-        pbx, pbw = 26, W - 52
+        by, bh = 100, 20
+        pbx, pbw = 8, W - 16                 # 横幅いっぱいの大きなボタン
         pressed = self.blade_flash > 0
         beat = self.beat_pulse > 4
         label = "PARRY"
@@ -460,12 +400,10 @@ class Game:
     def _draw_over(self):
         bx, by, bw, bh = 14, 30, W - 28, 68
         pyxel.rect(bx, by, bw, bh, 0)
-        edge = 8 if self.end_reason == "DEFEATED" else 12
-        pyxel.rectb(bx, by, bw, bh, edge)
+        pyxel.rectb(bx, by, bw, bh, 12)
         cx = W // 2
-        title = self.end_reason or "TIME UP"
-        tcol = 8 if self.end_reason == "DEFEATED" else 10
-        pyxel.text(cx - len(title) * 2, by + 6, title, tcol)
+        title = "TIME UP"
+        pyxel.text(cx - len(title) * 2, by + 6, title, 10)
         pyxel.line(bx + 4, by + 15, bx + bw - 5, by + 15, 5)
         rows = [
             (f"SCORE  {self.score}", 7),
