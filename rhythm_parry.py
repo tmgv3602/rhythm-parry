@@ -3,8 +3,9 @@
 # ファミコン2A03構成 — パルス=リード(プレイヤー) / 三角波=ベース / ノイズ=ドラム。
 # ミスするとその音が鳴らない = 旋律に穴が空く = 自分が演奏している実感。
 #
-# 操作: SPACE / Z / X = パリィ   ← → = 判定窓調整   R = リトライ
+# 操作: タップ / SPACE / Z / X = パリィ   画面端の +/- = 判定窓   タップ/R = リトライ
 # 実行: pip install pyxel && python rhythm_parry.py
+#  (スマホ: ブラウザ版を docs/index.html → GitHub Pages で配信、画面タップで操作)
 
 import pyxel
 import math
@@ -143,9 +144,13 @@ class Game:
         self.end_reason = ""
 
     # ---------- 入力・調整 ----------
-    def _read_parry(self):
+    def _read_parry(self, block_tap=False):
+        tap = pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and not block_tap
         pressed = (pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_Z)
-                   or pyxel.btnp(pyxel.KEY_X))
+                   or pyxel.btnp(pyxel.KEY_X)
+                   or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A)
+                   or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B)
+                   or tap)
         if not pressed or self.blade_cd > 0:
             return
         self.blade_cd = COOLDOWN
@@ -162,16 +167,27 @@ class Game:
             self.blade_col = 6
 
     def _adjust_window(self):
+        # キーボード/方向キー
         inc = (pyxel.btnp(pyxel.KEY_RIGHT, hold=14, repeat=4)
                or pyxel.btnp(pyxel.KEY_UP, hold=14, repeat=4))
         dec = (pyxel.btnp(pyxel.KEY_LEFT, hold=14, repeat=4)
                or pyxel.btnp(pyxel.KEY_DOWN, hold=14, repeat=4))
+        # 画面端の +/- ボタンへのタップ(スマホ用)
+        tap_btn = False
+        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and pyxel.mouse_y >= H - 12:
+            if pyxel.mouse_x < 26:
+                dec = True
+                tap_btn = True
+            elif pyxel.mouse_x > W - 26:
+                inc = True
+                tap_btn = True
         if inc:
             self.active_frames = min(20, self.active_frames + 1)
             self.window_flash = 12
         if dec:
             self.active_frames = max(2, self.active_frames - 1)
             self.window_flash = 12
+        return tap_btn                       # True ならそのタップはパリィにしない
 
     # ---------- ビート進行(伴奏) ----------
     def _on_step(self, step):
@@ -262,10 +278,13 @@ class Game:
             if sp.life <= 0:
                 self.sparks.remove(sp)
 
-        self._adjust_window()
+        tap_on_button = self._adjust_window()
 
         if self.over:
-            if pyxel.btnp(pyxel.KEY_R) or pyxel.btnp(pyxel.KEY_SPACE):
+            if (pyxel.btnp(pyxel.KEY_R) or pyxel.btnp(pyxel.KEY_SPACE)
+                    or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)
+                    or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A)
+                    or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B)):
                 self.reset()
             return
 
@@ -284,7 +303,7 @@ class Game:
 
         if self.blade_cd > 0:
             self.blade_cd -= 1
-        self._read_parry()
+        self._read_parry(block_tap=tap_on_button)
 
         for s in self.slashes[:]:
             if s.resolved:
@@ -402,16 +421,19 @@ class Game:
             pyxel.text(tx + 1, 41 - yoff, t, 0)
             pyxel.text(tx, 40 - yoff, t, self.result_col)
 
+        # 判定窓の調整(タップ可能な +/- ボタン)
+        pyxel.rectb(2, H - 12, 12, 11, 5)
+        pyxel.text(6, H - 9, "-", 7)
+        pyxel.rectb(W - 14, H - 12, 12, 11, 5)
+        pyxel.text(W - 10, H - 9, "+", 7)
         wcol = 10 if self.window_flash > 0 else 12
-        pyxel.text(4, H - 8, f"{self.active_frames}F WIN", wcol)
-        pyxel.text(W // 2 - 14, H - 8, f"BPM {BPM}", 5)
-        ad = "< > ADJ"
-        pyxel.text(W - 4 - len(ad) * 4, H - 8, ad, 5)
+        wt = f"WIN {self.active_frames}F"
+        pyxel.text(W // 2 - len(wt) * 2, H - 9, wt, wcol)
 
         if self.combo == 0 and self.best_combo == 0 and not self.over:
-            hint = "SPACE ON THE BEAT"
+            hint = "TAP ON THE BEAT"
             c = 6 if pyxel.frame_count % 30 < 20 else 5
-            pyxel.text(W // 2 - len(hint) * 2, H - 18, hint, c)
+            pyxel.text(W // 2 - len(hint) * 2, H - 20, hint, c)
 
     def _draw_over(self):
         bx, by, bw, bh = 14, 30, W - 28, 68
