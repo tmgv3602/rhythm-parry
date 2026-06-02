@@ -172,13 +172,13 @@ class Game:
                or pyxel.btnp(pyxel.KEY_UP, hold=14, repeat=4))
         dec = (pyxel.btnp(pyxel.KEY_LEFT, hold=14, repeat=4)
                or pyxel.btnp(pyxel.KEY_DOWN, hold=14, repeat=4))
-        # 画面端の +/- ボタンへのタップ(スマホ用)
+        # 画面下のボタンバンド端の +/- へのタップ(スマホ用)
         tap_btn = False
-        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and pyxel.mouse_y >= H - 12:
-            if pyxel.mouse_x < 26:
+        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and pyxel.mouse_y >= H - 24:
+            if pyxel.mouse_x < 24:
                 dec = True
                 tap_btn = True
-            elif pyxel.mouse_x > W - 26:
+            elif pyxel.mouse_x > W - 24:
                 inc = True
                 tap_btn = True
         if inc:
@@ -421,19 +421,41 @@ class Game:
             pyxel.text(tx + 1, 41 - yoff, t, 0)
             pyxel.text(tx, 40 - yoff, t, self.result_col)
 
-        # 判定窓の調整(タップ可能な +/- ボタン)
-        pyxel.rectb(2, H - 12, 12, 11, 5)
-        pyxel.text(6, H - 9, "-", 7)
-        pyxel.rectb(W - 14, H - 12, 12, 11, 5)
-        pyxel.text(W - 10, H - 9, "+", 7)
-        wcol = 10 if self.window_flash > 0 else 12
-        wt = f"WIN {self.active_frames}F"
-        pyxel.text(W // 2 - len(wt) * 2, H - 9, wt, wcol)
+        # === 自作パリィボタン(タップの視覚アンカー)===
+        if not self.over:
+            self._draw_parry_button()
 
-        if self.combo == 0 and self.best_combo == 0 and not self.over:
-            hint = "TAP ON THE BEAT"
-            c = 6 if pyxel.frame_count % 30 < 20 else 5
-            pyxel.text(W // 2 - len(hint) * 2, H - 20, hint, c)
+    def _draw_parry_button(self):
+        by, bh = 104, 20
+
+        # 判定窓の表示(ボタンの上)
+        wt = f"WINDOW {self.active_frames}F"
+        wc = 10 if self.window_flash > 0 else 5
+        pyxel.text(W // 2 - len(wt) * 2, 97, wt, wc)
+
+        # 端の - / + ボタン
+        for label, x in (("-", 4), ("+", W - 22)):
+            pyxel.rect(x, by, 18, bh, 1)
+            pyxel.rectb(x, by, 18, bh, 5)
+            pyxel.text(x + 7, by + 7, label, 7)
+
+        # 中央: PARRY ボタン — タップで光り、ビートで脈打つ
+        pbx, pbw = 26, W - 52
+        pressed = self.blade_flash > 0
+        beat = self.beat_pulse > 4
+        label = "PARRY"
+        lx = pbx + (pbw - len(label) * 4) // 2
+        ly = by + 7
+        if pressed:
+            fill = 10 if self.blade_col == 10 else 7      # PERFECT=黄 / 通常=白
+            pyxel.rect(pbx, by, pbw, bh, fill)
+            pyxel.rectb(pbx - 1, by - 1, pbw + 2, bh + 2, 7)
+            pyxel.text(lx, ly, label, 0)
+        else:
+            pyxel.rect(pbx, by, pbw, bh, 1)
+            edge = 10 if beat else 12                      # ビートで縁が明るく脈打つ
+            pyxel.rectb(pbx, by, pbw, bh, edge)
+            pyxel.text(lx, ly, label, 7 if beat else 6)
 
     def _draw_over(self):
         bx, by, bw, bh = 14, 30, W - 28, 68
